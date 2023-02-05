@@ -1,7 +1,6 @@
 import os
-import json
 from pydantic import BaseModel
-from rdflib import Graph, URIRef, Literal, Namespace, BNode
+from rdflib import Graph, Literal, Namespace, BNode
 from rdflib.namespace import XSD, OWL, RDF, RDFS
 
 def get_properties(schema, objectName):
@@ -26,8 +25,8 @@ def get_properties(schema, objectName):
 
         if 'type' in schema['properties'][prop]:
             t = schema['properties'][prop]['type']
-            isArray = (t == 'array')
-            isRequired = (prop in schema['required'])
+            isArray = t == 'array'
+            isRequired = prop in schema['required']
             if isArray and '$ref' in schema['properties'][prop]['items']:
                 isObject = True
                 hasType = os.path.basename(schema['properties'][prop]['items']['$ref'])
@@ -39,7 +38,7 @@ def get_properties(schema, objectName):
 
         elif '$ref' in schema['properties'][prop]:
             isObject = True
-            isRequired = (prop in schema['required'])
+            isRequired = prop in schema['required']
             hasType = os.path.basename(schema['properties'][prop]['$ref'])
         d['properties'].append(dict(prop=prop, isArray=isArray, isObject=isObject, isRequired=isRequired, hasType=hasType))
     return d
@@ -62,13 +61,14 @@ def get_objects(schema):
         if 'title' in definition and 'type' in definition and definition['type'] == 'object':
             yield (definition['title'])
 
-def toType(pyType : str):
+def toType(pyType : str, namespace : str = "http://www.onto-ns.com/1.0/ontology/pydantic#"):
     rdftype = {
         'string':XSD.string,
         'integer':XSD.int,
         'date':XSD.dateTime
     }
-    return rdftype[pyType] if pyType in rdftype else n[pyType]
+    ns = Namespace(namespace)
+    return rdftype[pyType] if pyType in rdftype else ns[pyType]
 
 
 def schema2graph(schema : BaseModel,
@@ -95,7 +95,7 @@ def schema2graph(schema : BaseModel,
             g.add((bnode, RDF.type, OWL.Restriction))
             g.add((bnode, OWL.onProperty, ns[p['prop']]))
             if p['isArray'] or (not p['isRequired']):
-                g.add((bnode, OWL.someValuesFrom, toType(p['hasType'])))
+                g.add((bnode, OWL.someValuesFrom, toType(p['hasType'], namespace)))
             elif p['isRequired']:
                 g.add((bnode,
                        OWL.qualifiedCardinality,
@@ -131,7 +131,7 @@ def instance2graph(instance : BaseModel,
 
     for key, value in instance:
         if isinstance(value, BaseModel):
-            obj = storeIndividual(graph, value)
+            obj = instance2graph(graph, value)
             graph.add((subj, ns[key], obj))
         else:
             graph.add((subj, ns[key], Literal(value)))
